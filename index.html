@@ -3,80 +3,370 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neon Prowl</title>
+    <title>Neon Prowl Mobile</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
-        /* --- GLOBAL LAYOUT --- */
+        /* RESET EVERYTHING */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            margin: 0;
-            padding: 0;
-            background-color: #111;
+            background-color: #050510; /* Dark Blue so you know it loaded */
             color: white;
             font-family: 'Press Start 2P', monospace;
-            overflow: hidden; /* Prevent scroll bars */
-            height: 100vh;
+            overflow: hidden;
             width: 100vw;
+            height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
-            touch-action: none; /* Disable native touch gestures */
-            user-select: none;
-            -webkit-user-select: none;
+            touch-action: none;
         }
 
-        /* --- RESPONSIVE GAME CONTAINER --- */
+        /* The Game Box */
         #game-container {
             position: relative;
-            width: 100%;
-            max-width: 900px;
-            aspect-ratio: 16 / 9; 
             background: #000;
-            box-shadow: 0 0 20px #00ffff;
             border: 2px solid #333;
+            /* We will size this via JS */
         }
 
-        canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-            image-rendering: pixelated; 
-        }
+        canvas { display: block; }
 
-        /* --- UI OVERLAYS --- */
+        /* UI Layers */
         .overlay {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; 
+            justify-content: center; align-items: center;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 20;
             text-align: center;
-            background: rgba(0, 0, 0, 0.92);
-            z-index: 10;
-            padding: 20px;
-            box-sizing: border-box;
         }
 
-        /* HUD */
-        #hud-layer {
-            position: absolute;
-            top: 10px; left: 15px; right: 15px;
-            display: flex;
-            justify-content: space-between;
+        .hud {
+            position: absolute; top: 10px; left: 10px; right: 10px;
+            display: flex; justify-content: space-between;
             pointer-events: none;
-            z-index: 5;
+            z-index: 10;
         }
 
-        /* TYPOGRAPHY */
-        h1 { 
-            font-size: clamp(16px, 4vw, 36px); 
-            color: #0ff; 
-            margin-bottom: 10px; 
-            line-height: 1.5; 
-            text-shadow: 2px 2px #000;
+        /* Text & Buttons */
+        h1 { font-size: 24px; color: #0ff; margin-bottom: 20px; line-height: 1.5; }
+        p { font-size: 12px; color: #aaa; margin-bottom: 30px; line-height: 1.6; max-width: 90%; }
+        
+        button {
+            background: #f0f; color: #fff; border: 3px solid #fff;
+            padding: 15px 25px; font-family: inherit; font-size: 16px;
+            cursor: pointer; text-transform: uppercase;
+        }
+        button:active { background: #fff; color: #f0f; }
+
+        .hidden { display: none !important; }
+
+        /* Rotation Warning */
+        #rotate-warning {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 999;
+            flex-direction: column; justify-content: center; align-items: center;
+            text-align: center; color: yellow;
         }
         
-        p { 
-            color: #aaa; 
-            font-size: clamp(8px, 2
+        /* Show warning only in portrait */
+        @media screen and (orientation: portrait) {
+            #rotate-warning { display: flex; }
+        }
+
+    </style>
+</head>
+<body>
+
+    <script>
+        window.onerror = function(message, source, lineno, colno, error) {
+            alert("Error: " + message + "\nLine: " + lineno);
+        };
+    </script>
+
+    <div id="rotate-warning">
+        <h1>⟳ ROTATE</h1>
+        <p>Please turn your phone sideways.</p>
+    </div>
+
+    <div id="game-container">
+        
+        <div class="hud">
+            <div>LVL <span id="lvl-txt" style="color:#0ff">1</span></div>
+            <div>GOAL <span id="dist-txt" style="color:#0ff">0%</span></div>
+        </div>
+
+        <div id="start-screen" class="overlay">
+            <h1>NEON PROWL</h1>
+            <p>1. HOLD SCREEN to Run<br>2. RELEASE to Stop<br>3. Watch for Light!</p>
+            <button id="btn-start">START</button>
+        </div>
+
+        <div id="game-over" class="overlay hidden">
+            <h1 style="color:red">BUSTED!</h1>
+            <button id="btn-retry">RETRY</button>
+        </div>
+
+        <div id="level-complete" class="overlay hidden">
+            <h1 style="color:#0f0">SAFE!</h1>
+            <button id="btn-next">NEXT</button>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <script>
+        // --- RESIZE LOGIC (CRITICAL FOR MOBILE) ---
+        const container = document.getElementById('game-container');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Fixed internal resolution (Gameboy style logic)
+        const GAME_WIDTH = 800;
+        const GAME_HEIGHT = 450;
+
+        function resize() {
+            // Calculate scale to fit screen while keeping 16:9 ratio
+            let aspect = GAME_WIDTH / GAME_HEIGHT;
+            let windowAspect = window.innerWidth / window.innerHeight;
+            let scale;
+
+            if (windowAspect < aspect) {
+                // Screen is narrower (Portraitish)
+                scale = window.innerWidth / GAME_WIDTH;
+            } else {
+                // Screen is wider (Landscape)
+                scale = window.innerHeight / GAME_HEIGHT;
+            }
+
+            // Set container size
+            container.style.width = (GAME_WIDTH * scale) + "px";
+            container.style.height = (GAME_HEIGHT * scale) + "px";
+
+            // Set Canvas Internal Resolution
+            canvas.width = GAME_WIDTH;
+            canvas.height = GAME_HEIGHT;
+            
+            // Force redraw immediately
+            if(state !== "PLAYING") drawMenuBg();
+        }
+
+        window.addEventListener('resize', resize);
+        
+        // --- GAME ENGINE ---
+        
+        // Audio
+        let audioCtx;
+        function initAudio() {
+            if(!audioCtx) {
+                try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } 
+                catch(e){console.log("No Audio");}
+            }
+            if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function sfx(type) {
+            if(!audioCtx) return;
+            let o = audioCtx.createOscillator();
+            let g = audioCtx.createGain();
+            o.connect(g); g.connect(audioCtx.destination);
+            let now = audioCtx.currentTime;
+            
+            if(type==='win'){
+                o.type='triangle'; o.frequency.setValueAtTime(400, now); o.frequency.exponentialRampToValueAtTime(800, now+0.3);
+                g.gain.setValueAtTime(0.1, now); g.gain.linearRampToValueAtTime(0, now+0.3);
+                o.start(now); o.stop(now+0.3);
+            } else {
+                o.type='sawtooth'; o.frequency.setValueAtTime(150, now); o.frequency.linearRampToValueAtTime(50, now+0.5);
+                g.gain.setValueAtTime(0.2, now); g.gain.linearRampToValueAtTime(0, now+0.5);
+                o.start(now); o.stop(now+0.5);
+            }
+        }
+
+        // State
+        let state = "MENU";
+        let level = 1;
+        let frame = 0;
+        let camX = 0;
+        let isHolding = false;
+        
+        let player = {x:50, y:340, w:30, h:20, vx:0, hidden:false};
+        let drone = {x:400, y:50, tx:400, state:"IDLE", timer:0, spd:0.05, w:140};
+        let boxes = [];
+        let mapLen = 1000;
+
+        function startGame() {
+            initAudio();
+            level = 1;
+            loadLevel();
+        }
+
+        function loadLevel() {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-over').classList.add('hidden');
+            document.getElementById('level-complete').classList.add('hidden');
+            document.getElementById('lvl-txt').innerText = level;
+
+            mapLen = 1000 + (level*300);
+            player.x = 50; player.vx = 0; player.hidden=false; camX = 0;
+            drone.x = 400; drone.tx=400; drone.state="THINK";
+            
+            boxes = [];
+            for(let i=0; i<3+level; i++) {
+                boxes.push({x: 300 + Math.random()*(mapLen-400), y:335, w:50, h:30});
+            }
+
+            state = "PLAYING";
+            requestAnimationFrame(loop);
+        }
+
+        function update() {
+            frame++;
+            if(isHolding) player.vx += 0.8; else player.vx *= 0.8;
+            player.vx = Math.min(Math.max(player.vx, 0), 8);
+            player.x += player.vx;
+
+            let targetCam = player.x - 150;
+            if(targetCam < 0) targetCam = 0;
+            camX += (targetCam - camX) * 0.1;
+
+            // Boxes
+            player.hidden = false;
+            boxes.forEach(b => {
+                if(Math.abs((player.x+15)-(b.x+25)) < 20) player.hidden = true;
+            });
+
+            // Drone AI
+            let center = camX + 400;
+            if(drone.state === "THINK") {
+                drone.tx = center + (Math.random()*600 - 300);
+                if(drone.tx < 0) drone.tx = 0;
+                drone.spd = Math.random()*0.08 + 0.02;
+                drone.state = "MOVE";
+            } else if (drone.state === "MOVE") {
+                drone.x += (drone.tx - drone.x) * drone.spd;
+                if(Math.abs(drone.x - drone.tx) < 10) {
+                    drone.state = "WAIT";
+                    drone.timer = Math.random()*60 + 20;
+                }
+            } else {
+                drone.timer--;
+                if(drone.timer<=0) drone.state="THINK";
+            }
+
+            // Detect
+            let dist = Math.abs((player.x+15)-drone.x);
+            let inLight = dist < (drone.w/2);
+            if(inLight && !player.hidden && Math.abs(player.vx) > 0.5) {
+                state="GAMEOVER";
+                sfx('lose');
+                document.getElementById('game-over').classList.remove('hidden');
+            }
+
+            // Win
+            if(player.x > mapLen) {
+                state="WIN";
+                sfx('win');
+                level++;
+                document.getElementById('level-complete').classList.remove('hidden');
+            }
+
+            let pct = Math.floor((player.x/mapLen)*100);
+            document.getElementById('dist-txt').innerText = Math.min(100, pct) + "%";
+        }
+
+        function draw() {
+            // BG
+            ctx.fillStyle = "#050510"; ctx.fillRect(0,0,800,450);
+            
+            ctx.save();
+            ctx.translate(-camX, 0);
+
+            // Floor
+            ctx.fillStyle = "#222"; ctx.fillRect(0,360, mapLen+800, 90);
+            ctx.strokeStyle="#444"; ctx.beginPath(); ctx.moveTo(0,360); ctx.lineTo(mapLen+800,360); ctx.stroke();
+
+            // Boxes
+            ctx.fillStyle = "#cd853f";
+            boxes.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+
+            // Goal
+            ctx.fillStyle = "#0f0"; ctx.fillRect(mapLen, 280, 20, 80);
+
+            // Player
+            if(player.hidden) {
+                ctx.fillStyle="#fff"; 
+                let b = boxes.find(box => Math.abs((player.x+15)-(box.x+25)) < 30);
+                if(b) ctx.fillRect(b.x+20, b.y+10, 8, 4); // Eyes
+            } else {
+                ctx.fillStyle="#0ff";
+                let bounce = Math.abs(Math.sin(frame*0.5))*player.vx;
+                let str = player.vx*2;
+                ctx.fillRect(player.x, player.y+bounce, player.w+str, player.h-bounce/2);
+            }
+
+            ctx.restore();
+
+            // Light
+            ctx.fillStyle="rgba(0,0,0,0.85)"; ctx.fillRect(0,0,800,450);
+            
+            ctx.save();
+            let dx = drone.x - camX;
+            ctx.globalCompositeOperation = "destination-out";
+            ctx.beginPath(); ctx.moveTo(dx, drone.y); ctx.lineTo(dx-drone.w/2, 450); ctx.lineTo(dx+drone.w/2, 450); ctx.fill();
+            
+            ctx.globalCompositeOperation = "source-over";
+            let grad = ctx.createLinearGradient(0, drone.y, 0, 450);
+            grad.addColorStop(0, "rgba(0,0,0,0)");
+            grad.addColorStop(1, "rgba(255,255,100,0.2)");
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.moveTo(dx, drone.y); ctx.lineTo(dx-drone.w/2, 450); ctx.lineTo(dx+drone.w/2, 450); ctx.fill();
+            
+            ctx.fillStyle="#333"; ctx.fillRect(dx-20, drone.y-15, 40, 15);
+            ctx.fillStyle="#0ff"; ctx.fillRect(dx-5, drone.y-5, 10, 5);
+            ctx.restore();
+        }
+
+        // Just to make sure screen isn't black on load
+        function drawMenuBg() {
+            ctx.fillStyle = "#111";
+            ctx.fillRect(0,0,800,450);
+        }
+
+        function loop() {
+            if(state==="PLAYING") {
+                update();
+                draw();
+                requestAnimationFrame(loop);
+            }
+        }
+
+        // --- INPUTS ---
+        function setInput(v) { isHolding = v; }
+        
+        window.addEventListener('touchstart', (e)=>{ 
+            if(e.target.tagName !== 'BUTTON') { e.preventDefault(); setInput(true); }
+        }, {passive:false});
+        
+        window.addEventListener('touchend', (e)=>{ 
+             if(e.target.tagName !== 'BUTTON') { e.preventDefault(); setInput(false); }
+        });
+
+        window.addEventListener('mousedown', (e)=>{ if(e.target.tagName!=='BUTTON') setInput(true); });
+        window.addEventListener('mouseup', ()=>setInput(false));
+        window.addEventListener('keydown', (e)=>{ if(e.code==='Space') setInput(true); });
+        window.addEventListener('keyup', (e)=>{ if(e.code==='Space') setInput(false); });
+
+        // Buttons
+        document.getElementById('btn-start').onclick = (e) => { e.stopPropagation(); startGame(); };
+        document.getElementById('btn-retry').onclick = (e) => { e.stopPropagation(); loadLevel(); };
+        document.getElementById('btn-next').onclick = (e) => { e.stopPropagation(); level++; loadLevel(); };
+
+        // INITIAL RESIZE
+        resize();
+
+    </script>
+</body>
+</html>
