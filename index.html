@@ -3,369 +3,449 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Neon Prowl Mobile</title>
+    <title>Neon Prowl</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
-        /* RESET EVERYTHING */
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
+        /* --- GLOBAL LAYOUT --- */
         body {
-            background-color: #050510; /* Dark Blue so you know it loaded */
+            margin: 0;
+            padding: 0;
+            background-color: #111;
             color: white;
             font-family: 'Press Start 2P', monospace;
-            overflow: hidden;
-            width: 100vw;
+            overflow: hidden; /* Prevent scroll bars */
             height: 100vh;
+            width: 100vw;
             display: flex;
             justify-content: center;
             align-items: center;
-            touch-action: none;
+            touch-action: none; /* Disable native touch gestures */
+            user-select: none;
+            -webkit-user-select: none;
         }
 
-        /* The Game Box */
+        /* --- RESPONSIVE GAME CONTAINER --- */
         #game-container {
             position: relative;
+            width: 100%;
+            max-width: 900px;
+            aspect-ratio: 16 / 9; 
             background: #000;
+            box-shadow: 0 0 20px #00ffff;
             border: 2px solid #333;
-            /* We will size this via JS */
         }
 
-        canvas { display: block; }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated; 
+        }
 
-        /* UI Layers */
+        /* --- UI OVERLAYS --- */
         .overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            display: flex; flex-direction: column; 
-            justify-content: center; align-items: center;
-            background: rgba(0, 0, 0, 0.9);
-            z-index: 20;
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
             text-align: center;
-        }
-
-        .hud {
-            position: absolute; top: 10px; left: 10px; right: 10px;
-            display: flex; justify-content: space-between;
-            pointer-events: none;
+            background: rgba(0, 0, 0, 0.92);
             z-index: 10;
+            padding: 20px;
+            box-sizing: border-box;
         }
 
-        /* Text & Buttons */
-        h1 { font-size: 24px; color: #0ff; margin-bottom: 20px; line-height: 1.5; }
-        p { font-size: 12px; color: #aaa; margin-bottom: 30px; line-height: 1.6; max-width: 90%; }
-        
-        button {
-            background: #f0f; color: #fff; border: 3px solid #fff;
-            padding: 15px 25px; font-family: inherit; font-size: 16px;
-            cursor: pointer; text-transform: uppercase;
+        /* HUD */
+        #hud-layer {
+            position: absolute;
+            top: 10px; left: 15px; right: 15px;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            z-index: 5;
         }
-        button:active { background: #fff; color: #f0f; }
+
+        /* TYPOGRAPHY */
+        h1 { 
+            font-size: clamp(16px, 4vw, 36px); 
+            color: #0ff; 
+            margin-bottom: 10px; 
+            line-height: 1.5; 
+            text-shadow: 2px 2px #000;
+        }
+        
+        p { 
+            color: #aaa; 
+            font-size: clamp(8px, 2.5vw, 12px); 
+            margin-bottom: 25px; 
+            line-height: 1.8; 
+            max-width: 600px;
+        }
+
+        .hud-text { font-size: clamp(10px, 2vw, 16px); color: #fff; text-shadow: 1px 1px #000; }
+        .highlight { color: #0ff; }
+        .warning { color: #ff4444; }
+        .success { color: #0f0; }
+
+        /* BUTTONS - Made larger for touch */
+        button {
+            background: #ff00ff; color: white; border: 3px solid #fff;
+            padding: 15px 30px; font-family: inherit; font-size: clamp(12px, 3vw, 16px);
+            cursor: pointer; text-transform: uppercase;
+            box-shadow: 0 0 15px #ff00ff;
+            transition: transform 0.1s;
+            touch-action: manipulation; /* Improves touch response */
+        }
+        button:active { transform: scale(0.95); background: #fff; color: #ff00ff;}
 
         .hidden { display: none !important; }
 
-        /* Rotation Warning */
-        #rotate-warning {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 999;
+        /* ROTATE MESSAGE (Visible only in Portrait) */
+        #rotate-msg {
+            display: none;
+            position: absolute; top:0; left:0; width:100%; height:100%;
+            background: #000; z-index: 100;
             flex-direction: column; justify-content: center; align-items: center;
-            text-align: center; color: yellow;
+            text-align: center; color: #0ff;
         }
-        
-        /* Show warning only in portrait */
-        @media screen and (orientation: portrait) {
-            #rotate-warning { display: flex; }
+        @media (orientation: portrait) {
+            #rotate-msg { display: flex; }
         }
 
     </style>
 </head>
 <body>
 
-    <script>
-        window.onerror = function(message, source, lineno, colno, error) {
-            alert("Error: " + message + "\nLine: " + lineno);
-        };
-    </script>
-
-    <div id="rotate-warning">
-        <h1>⟳ ROTATE</h1>
-        <p>Please turn your phone sideways.</p>
+    <div id="rotate-msg">
+        <h1>PLEASE ROTATE DEVICE ↻</h1>
+        <p>This game is best played in Landscape mode.</p>
     </div>
 
     <div id="game-container">
         
-        <div class="hud">
-            <div>LVL <span id="lvl-txt" style="color:#0ff">1</span></div>
-            <div>GOAL <span id="dist-txt" style="color:#0ff">0%</span></div>
+        <div id="hud-layer">
+            <div class="hud-text">LEVEL <span id="lvl-txt" class="highlight">1</span></div>
+            <div class="hud-text">GOAL <span id="dist-txt" class="highlight">0%</span></div>
         </div>
 
         <div id="start-screen" class="overlay">
             <h1>NEON PROWL</h1>
-            <p>1. HOLD SCREEN to Run<br>2. RELEASE to Stop<br>3. Watch for Light!</p>
-            <button id="btn-start">START</button>
+            <p>
+                1. HOLD <span class="highlight">SCREEN</span> to Run.<br>
+                2. RELEASE to Stop.<br>
+                3. Don't move in the <span class="highlight">LIGHT</span>.<br>
+                4. Hide in <span style="color:#cd853f">BOXES</span>.
+            </p>
+            <button id="btn-start">START HEIST</button>
         </div>
 
         <div id="game-over" class="overlay hidden">
-            <h1 style="color:red">BUSTED!</h1>
-            <button id="btn-retry">RETRY</button>
+            <h1 class="warning">BUSTED!</h1>
+            <p>You moved in the light.</p>
+            <button id="btn-retry">TRY AGAIN</button>
         </div>
 
         <div id="level-complete" class="overlay hidden">
-            <h1 style="color:#0f0">SAFE!</h1>
-            <button id="btn-next">NEXT</button>
+            <h1 class="success">SAFE!</h1>
+            <p>Sector Cleared.</p>
+            <button id="btn-next">NEXT SECTOR</button>
         </div>
 
-        <canvas id="gameCanvas"></canvas>
+        <canvas id="gameCanvas" width="800" height="450"></canvas>
     </div>
 
     <script>
-        // --- RESIZE LOGIC (CRITICAL FOR MOBILE) ---
-        const container = document.getElementById('game-container');
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        
-        // Fixed internal resolution (Gameboy style logic)
-        const GAME_WIDTH = 800;
-        const GAME_HEIGHT = 450;
+        const uiStart = document.getElementById('start-screen');
+        const uiGameOver = document.getElementById('game-over');
+        const uiLevelWin = document.getElementById('level-complete');
 
-        function resize() {
-            // Calculate scale to fit screen while keeping 16:9 ratio
-            let aspect = GAME_WIDTH / GAME_HEIGHT;
-            let windowAspect = window.innerWidth / window.innerHeight;
-            let scale;
-
-            if (windowAspect < aspect) {
-                // Screen is narrower (Portraitish)
-                scale = window.innerWidth / GAME_WIDTH;
-            } else {
-                // Screen is wider (Landscape)
-                scale = window.innerHeight / GAME_HEIGHT;
-            }
-
-            // Set container size
-            container.style.width = (GAME_WIDTH * scale) + "px";
-            container.style.height = (GAME_HEIGHT * scale) + "px";
-
-            // Set Canvas Internal Resolution
-            canvas.width = GAME_WIDTH;
-            canvas.height = GAME_HEIGHT;
-            
-            // Force redraw immediately
-            if(state !== "PLAYING") drawMenuBg();
-        }
-
-        window.addEventListener('resize', resize);
-        
-        // --- GAME ENGINE ---
-        
-        // Audio
-        let audioCtx;
+        // --- AUDIO ---
+        let audioCtx = null;
         function initAudio() {
-            if(!audioCtx) {
-                try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } 
-                catch(e){console.log("No Audio");}
+            if (!audioCtx) {
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    audioCtx = new AudioContext();
+                } catch(e) { console.log("Audio Error"); }
             }
-            if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
         }
 
         function sfx(type) {
-            if(!audioCtx) return;
-            let o = audioCtx.createOscillator();
-            let g = audioCtx.createGain();
-            o.connect(g); g.connect(audioCtx.destination);
-            let now = audioCtx.currentTime;
-            
-            if(type==='win'){
-                o.type='triangle'; o.frequency.setValueAtTime(400, now); o.frequency.exponentialRampToValueAtTime(800, now+0.3);
-                g.gain.setValueAtTime(0.1, now); g.gain.linearRampToValueAtTime(0, now+0.3);
-                o.start(now); o.stop(now+0.3);
-            } else {
-                o.type='sawtooth'; o.frequency.setValueAtTime(150, now); o.frequency.linearRampToValueAtTime(50, now+0.5);
-                g.gain.setValueAtTime(0.2, now); g.gain.linearRampToValueAtTime(0, now+0.5);
-                o.start(now); o.stop(now+0.5);
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+
+            if (type === 'win') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.linearRampToValueAtTime(800, now + 0.3);
+                gain.gain.setValueAtTime(0.1, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            } 
+            else if (type === 'lose') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.linearRampToValueAtTime(50, now + 0.5);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.linearRampToValueAtTime(0, now + 0.5);
+                osc.start(now); osc.stop(now + 0.5);
             }
         }
 
-        // State
+        // --- LEVELS ---
+        const LEVELS = [
+            { id: 1, length: 1000, boxes: 3, type: "EASY" },
+            { id: 2, length: 1400, boxes: 4, type: "WAIT" },
+            { id: 3, length: 1800, boxes: 4, type: "FAST" },
+            { id: 4, length: 2200, boxes: 5, type: "CHAOS" },
+            { id: 5, length: 3000, boxes: 7, type: "HARDCORE" }
+        ];
+
+        // --- STATE ---
         let state = "MENU";
-        let level = 1;
+        let lvlIdx = 0;
         let frame = 0;
         let camX = 0;
         let isHolding = false;
-        
-        let player = {x:50, y:340, w:30, h:20, vx:0, hidden:false};
-        let drone = {x:400, y:50, tx:400, state:"IDLE", timer:0, spd:0.05, w:140};
+
+        // Entities
+        let player = { x: 50, y: 340, w: 30, h: 20, vx: 0, hidden: false };
+        let drone = { x: 400, y: 50, targetX: 400, width: 140, state: "IDLE", timer: 0, speed: 0.05 };
         let boxes = [];
-        let mapLen = 1000;
+        let stars = [];
+
+        // --- GAME FUNCTIONS ---
+        function initStars() {
+            stars = [];
+            for(let i=0; i<60; i++) {
+                stars.push({x: Math.random()*800, y: Math.random()*300, s: Math.random()*2});
+            }
+        }
 
         function startGame() {
-            initAudio();
-            level = 1;
+            initAudio(); 
+            lvlIdx = 0;
+            loadLevel();
+        }
+
+        function nextLevel() {
+            lvlIdx++;
+            if(lvlIdx >= LEVELS.length) lvlIdx = 0;
             loadLevel();
         }
 
         function loadLevel() {
-            document.getElementById('start-screen').classList.add('hidden');
-            document.getElementById('game-over').classList.add('hidden');
-            document.getElementById('level-complete').classList.add('hidden');
-            document.getElementById('lvl-txt').innerText = level;
+            let config = LEVELS[lvlIdx];
+            uiStart.classList.add('hidden');
+            uiGameOver.classList.add('hidden');
+            uiLevelWin.classList.add('hidden');
+            document.getElementById('lvl-txt').innerText = config.id;
 
-            mapLen = 1000 + (level*300);
-            player.x = 50; player.vx = 0; player.hidden=false; camX = 0;
-            drone.x = 400; drone.tx=400; drone.state="THINK";
+            player.x = 50; player.vx = 0; player.hidden = false;
+            camX = 0;
+            drone.x = 400; drone.targetX = 400; drone.state = "THINK"; drone.timer = 0;
             
             boxes = [];
-            for(let i=0; i<3+level; i++) {
-                boxes.push({x: 300 + Math.random()*(mapLen-400), y:335, w:50, h:30});
+            for(let i=0; i<config.boxes; i++) {
+                boxes.push({ x: 300 + Math.random() * (config.length - 400), y: 335, w: 50, h: 30 });
             }
 
+            initStars();
             state = "PLAYING";
-            requestAnimationFrame(loop);
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updateDrone() {
+            let config = LEVELS[lvlIdx];
+            let patrolCenter = camX + 400;
+
+            if (drone.state === "THINK") {
+                let range = 350;
+                let nextX = patrolCenter + (Math.random() * range * 2 - range);
+                if (nextX < 0) nextX = 0;
+                if (nextX > config.length + 400) nextX = config.length + 400;
+                drone.targetX = nextX;
+                
+                if (config.type === "EASY") drone.speed = 0.04;
+                else if (config.type === "FAST") drone.speed = 0.08;
+                else if (config.type === "CHAOS") drone.speed = Math.random() * 0.09 + 0.02;
+                else drone.speed = 0.05;
+
+                drone.state = "MOVING";
+            } else if (drone.state === "MOVING") {
+                drone.x += (drone.targetX - drone.x) * drone.speed;
+                if (Math.abs(drone.x - drone.targetX) < 10) {
+                    drone.state = "WAIT";
+                    if (config.type === "WAIT") drone.timer = 100;
+                    else if (config.type === "CHAOS") drone.timer = Math.random() * 80;
+                    else drone.timer = 30;
+                }
+            } else if (drone.state === "WAIT") {
+                drone.timer--;
+                if (drone.timer <= 0) drone.state = "THINK";
+            }
         }
 
         function update() {
             frame++;
-            if(isHolding) player.vx += 0.8; else player.vx *= 0.8;
+            if (isHolding) player.vx += 0.8;
+            else player.vx *= 0.8;
             player.vx = Math.min(Math.max(player.vx, 0), 8);
             player.x += player.vx;
 
             let targetCam = player.x - 150;
-            if(targetCam < 0) targetCam = 0;
+            if (targetCam < 0) targetCam = 0;
             camX += (targetCam - camX) * 0.1;
 
-            // Boxes
             player.hidden = false;
             boxes.forEach(b => {
-                if(Math.abs((player.x+15)-(b.x+25)) < 20) player.hidden = true;
+                if (Math.abs((player.x + 15) - (b.x + 25)) < 20) player.hidden = true;
             });
 
-            // Drone AI
-            let center = camX + 400;
-            if(drone.state === "THINK") {
-                drone.tx = center + (Math.random()*600 - 300);
-                if(drone.tx < 0) drone.tx = 0;
-                drone.spd = Math.random()*0.08 + 0.02;
-                drone.state = "MOVE";
-            } else if (drone.state === "MOVE") {
-                drone.x += (drone.tx - drone.x) * drone.spd;
-                if(Math.abs(drone.x - drone.tx) < 10) {
-                    drone.state = "WAIT";
-                    drone.timer = Math.random()*60 + 20;
-                }
-            } else {
-                drone.timer--;
-                if(drone.timer<=0) drone.state="THINK";
+            updateDrone();
+
+            let dist = Math.abs((player.x + 15) - drone.x);
+            let inLight = dist < (drone.width / 2);
+            if (inLight && !player.hidden) {
+                if (Math.abs(player.vx) > 0.5) gameOver();
             }
 
-            // Detect
-            let dist = Math.abs((player.x+15)-drone.x);
-            let inLight = dist < (drone.w/2);
-            if(inLight && !player.hidden && Math.abs(player.vx) > 0.5) {
-                state="GAMEOVER";
-                sfx('lose');
-                document.getElementById('game-over').classList.remove('hidden');
-            }
-
-            // Win
-            if(player.x > mapLen) {
-                state="WIN";
+            let lvlLen = LEVELS[lvlIdx].length;
+            if (player.x > lvlLen) {
+                state = "WIN";
                 sfx('win');
-                level++;
-                document.getElementById('level-complete').classList.remove('hidden');
+                uiLevelWin.classList.remove('hidden');
             }
 
-            let pct = Math.floor((player.x/mapLen)*100);
+            let pct = Math.floor((player.x / lvlLen) * 100);
             document.getElementById('dist-txt').innerText = Math.min(100, pct) + "%";
         }
 
+        function gameOver() {
+            state = "GAMEOVER";
+            sfx('lose');
+            uiGameOver.classList.remove('hidden');
+        }
+
         function draw() {
-            // BG
-            ctx.fillStyle = "#050510"; ctx.fillRect(0,0,800,450);
-            
+            ctx.fillStyle = "#050510"; ctx.fillRect(0, 0, 800, 450);
+
+            ctx.fillStyle = "#fff";
+            stars.forEach(s => {
+                let sx = (s.x - camX * 0.2) % 800;
+                if(sx < 0) sx += 800;
+                ctx.fillRect(sx, s.y, s.s, s.s);
+            });
+
             ctx.save();
             ctx.translate(-camX, 0);
 
-            // Floor
-            ctx.fillStyle = "#222"; ctx.fillRect(0,360, mapLen+800, 90);
-            ctx.strokeStyle="#444"; ctx.beginPath(); ctx.moveTo(0,360); ctx.lineTo(mapLen+800,360); ctx.stroke();
+            let len = LEVELS[lvlIdx].length;
+            ctx.fillStyle = "#222"; ctx.fillRect(0, 360, len + 800, 90);
+            ctx.strokeStyle = "#555"; ctx.beginPath(); ctx.moveTo(0,360); ctx.lineTo(len+800, 360); ctx.stroke();
 
-            // Boxes
-            ctx.fillStyle = "#cd853f";
-            boxes.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+            boxes.forEach(b => {
+                ctx.fillStyle = "#cd853f"; ctx.fillRect(b.x, b.y, b.w, b.h);
+                ctx.strokeStyle = "#8b4513"; ctx.lineWidth=2; ctx.strokeRect(b.x, b.y, b.w, b.h);
+                ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.beginPath(); ctx.moveTo(b.x+15, b.y+10); ctx.lineTo(b.x+35, b.y+10); ctx.lineTo(b.x+25, b.y+20); ctx.fill();
+            });
 
-            // Goal
-            ctx.fillStyle = "#0f0"; ctx.fillRect(mapLen, 280, 20, 80);
+            ctx.fillStyle = "#0f0"; ctx.fillRect(len, 280, 20, 80); ctx.fillText("EXIT", len-10, 270);
 
-            // Player
             if(player.hidden) {
-                ctx.fillStyle="#fff"; 
                 let b = boxes.find(box => Math.abs((player.x+15)-(box.x+25)) < 30);
-                if(b) ctx.fillRect(b.x+20, b.y+10, 8, 4); // Eyes
+                if(b) { ctx.fillStyle="#fff"; ctx.fillRect(b.x+15, b.y+15, 4, 4); ctx.fillRect(b.x+30, b.y+15, 4, 4); }
             } else {
-                ctx.fillStyle="#0ff";
-                let bounce = Math.abs(Math.sin(frame*0.5))*player.vx;
-                let str = player.vx*2;
-                ctx.fillRect(player.x, player.y+bounce, player.w+str, player.h-bounce/2);
+                ctx.fillStyle = "#0ff"; ctx.shadowBlur=15; ctx.shadowColor="#0ff";
+                let bounce = Math.abs(Math.sin(frame*0.5)) * (player.vx * 1.5);
+                let stretch = player.vx * 3;
+                ctx.fillRect(player.x, player.y+bounce, player.w+stretch, player.h-bounce/2);
+                ctx.fillRect(player.x+player.w+stretch-5, player.y-10+bounce, 15, 15);
+                ctx.shadowBlur=0;
             }
 
             ctx.restore();
 
-            // Light
-            ctx.fillStyle="rgba(0,0,0,0.85)"; ctx.fillRect(0,0,800,450);
-            
+            ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0, 0, 800, 450);
             ctx.save();
             let dx = drone.x - camX;
             ctx.globalCompositeOperation = "destination-out";
-            ctx.beginPath(); ctx.moveTo(dx, drone.y); ctx.lineTo(dx-drone.w/2, 450); ctx.lineTo(dx+drone.w/2, 450); ctx.fill();
-            
+            ctx.beginPath(); ctx.moveTo(dx, drone.y); ctx.lineTo(dx-drone.width/2, 450); ctx.lineTo(dx+drone.width/2, 450); ctx.fill();
+
             ctx.globalCompositeOperation = "source-over";
-            let grad = ctx.createLinearGradient(0, drone.y, 0, 450);
+            let grad = ctx.createLinearGradient(0, drone.y, 0, 400);
+            let dist = Math.abs((player.x+15)-drone.x);
+            let inLight = dist < (drone.width/2);
+            let caught = (inLight && !player.hidden && player.vx > 0.5);
             grad.addColorStop(0, "rgba(0,0,0,0)");
-            grad.addColorStop(1, "rgba(255,255,100,0.2)");
+            grad.addColorStop(1, caught ? "rgba(255,0,0,0.6)" : "rgba(255,255,100,0.2)");
             ctx.fillStyle = grad;
-            ctx.beginPath(); ctx.moveTo(dx, drone.y); ctx.lineTo(dx-drone.w/2, 450); ctx.lineTo(dx+drone.w/2, 450); ctx.fill();
-            
-            ctx.fillStyle="#333"; ctx.fillRect(dx-20, drone.y-15, 40, 15);
-            ctx.fillStyle="#0ff"; ctx.fillRect(dx-5, drone.y-5, 10, 5);
+            ctx.beginPath(); ctx.moveTo(dx, drone.y); ctx.lineTo(dx-drone.width/2, 450); ctx.lineTo(dx+drone.width/2, 450); ctx.fill();
+
+            ctx.fillStyle = "#333"; ctx.fillRect(dx-20, drone.y-15, 40, 15);
+            if (caught) ctx.fillStyle = "#f00";
+            else if (drone.state === "WAIT") ctx.fillStyle = "#ff8800";
+            else ctx.fillStyle = "#0ff";
+            ctx.fillRect(dx-5, drone.y-5, 10, 5);
             ctx.restore();
         }
 
-        // Just to make sure screen isn't black on load
-        function drawMenuBg() {
-            ctx.fillStyle = "#111";
-            ctx.fillRect(0,0,800,450);
-        }
-
-        function loop() {
-            if(state==="PLAYING") {
+        function gameLoop() {
+            if(state === "PLAYING") {
                 update();
                 draw();
-                requestAnimationFrame(loop);
+                requestAnimationFrame(gameLoop);
             }
         }
 
-        // --- INPUTS ---
-        function setInput(v) { isHolding = v; }
+        // --- MOBILE FRIENDLY INPUTS ---
         
-        window.addEventListener('touchstart', (e)=>{ 
-            if(e.target.tagName !== 'BUTTON') { e.preventDefault(); setInput(true); }
-        }, {passive:false});
-        
-        window.addEventListener('touchend', (e)=>{ 
-             if(e.target.tagName !== 'BUTTON') { e.preventDefault(); setInput(false); }
+        function handleStart(e) {
+            // Check if user clicked a button (don't move cat if clicking button)
+            if (e.target.tagName === 'BUTTON') return;
+            
+            // Prevent scrolling
+            e.preventDefault(); 
+            isHolding = true;
+        }
+
+        function handleEnd(e) {
+            if (e.target.tagName === 'BUTTON') return;
+            e.preventDefault();
+            isHolding = false;
+        }
+
+        // Touch Listeners
+        window.addEventListener('touchstart', handleStart, {passive: false});
+        window.addEventListener('touchend', handleEnd, {passive: false});
+
+        // Mouse Listeners
+        window.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            isHolding = true; 
         });
+        window.addEventListener('mouseup', () => isHolding = false);
 
-        window.addEventListener('mousedown', (e)=>{ if(e.target.tagName!=='BUTTON') setInput(true); });
-        window.addEventListener('mouseup', ()=>setInput(false));
-        window.addEventListener('keydown', (e)=>{ if(e.code==='Space') setInput(true); });
-        window.addEventListener('keyup', (e)=>{ if(e.code==='Space') setInput(false); });
+        // Keyboard
+        window.addEventListener('keydown', (e) => { if(e.code === 'Space') isHolding = true; });
+        window.addEventListener('keyup', (e) => { if(e.code === 'Space') isHolding = false; });
 
-        // Buttons
-        document.getElementById('btn-start').onclick = (e) => { e.stopPropagation(); startGame(); };
-        document.getElementById('btn-retry').onclick = (e) => { e.stopPropagation(); loadLevel(); };
-        document.getElementById('btn-next').onclick = (e) => { e.stopPropagation(); level++; loadLevel(); };
-
-        // INITIAL RESIZE
-        resize();
+        // Button Listeners (Stop Propagation to prevent triggering game input)
+        document.getElementById('btn-start').addEventListener('click', (e) => { e.stopPropagation(); startGame(); });
+        document.getElementById('btn-retry').addEventListener('click', (e) => { e.stopPropagation(); loadLevel(); });
+        document.getElementById('btn-next').addEventListener('click', (e) => { e.stopPropagation(); nextLevel(); });
 
     </script>
 </body>
